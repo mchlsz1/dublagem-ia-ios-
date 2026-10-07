@@ -16,4 +16,5 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.dublagemia.app
         INFOPLIST_KEY_CFBundleDisplayName: Dublagem IA
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "O app precisa do microfone para os testes de áudio."
+        GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: "5.0"
