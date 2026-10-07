@@ -29,3 +29,16 @@ jobs:
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Compactar aplicativo
+        run: |
+          mkdir -p artifact
+          cd ~/Library/Developer/Xcode/DerivedData
+          APP_PATH=$(find . -path "*/Build/Products/Debug-iphonesimulator/DublagemIA.app" -type d | head -1)
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$GITHUB_WORKSPACE/artifact/DublagemIA-Simulator.zip"
+
+      - name: Enviar aplicativo como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: DublagemIA-Simulator
+          path: artifact/DublagemIA-Simulator.zip
