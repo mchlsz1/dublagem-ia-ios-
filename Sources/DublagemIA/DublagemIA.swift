@@ -9,6 +9,9 @@ final class SpeechManager: NSObject, ObservableObject {
     @Published var recognizedText = ""
     @Published var translatedText = ""
 
+    // Controle da velocidade da voz
+    @Published var speechRate: Float = 0.50
+
     private let audioEngine = AVAudioEngine()
     private let synthesizer = AVSpeechSynthesizer()
 
@@ -251,7 +254,6 @@ final class SpeechManager: NSObject, ObservableObject {
                     "Erro na tradução: \(error)"
                 )
             }
-
         }.resume()
     }
 
@@ -277,7 +279,8 @@ final class SpeechManager: NSObject, ObservableObject {
                 language: "pt-BR"
             )
 
-        utterance.rate = 0.5
+        // Usa a velocidade escolhida no controle
+        utterance.rate = speechRate
 
         synthesizer.speak(
             utterance
@@ -366,6 +369,58 @@ struct ContentView: View {
                     maxWidth: .infinity,
                     alignment: .leading
                 )
+                .padding()
+                .background(
+                    .gray.opacity(0.15)
+                )
+                .cornerRadius(12)
+
+                // MARK: - Controle de velocidade
+
+                VStack(spacing: 8) {
+
+                    HStack {
+
+                        Text("🐢")
+
+                        Text("Velocidade da voz")
+                            .font(.headline)
+
+                        Spacer()
+
+                        Text(
+                            String(
+                                format: "%.2fx",
+                                speechManager.speechRate / 0.5
+                            )
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Slider(
+                        value: $speechManager.speechRate,
+                        in: 0.30...0.80,
+                        step: 0.05
+                    )
+
+                    HStack {
+
+                        Text("Lenta")
+                            .font(.caption)
+
+                        Spacer()
+
+                        Text("Normal")
+                            .font(.caption)
+
+                        Spacer()
+
+                        Text("Rápida")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                }
                 .padding()
                 .background(
                     .gray.opacity(0.15)
