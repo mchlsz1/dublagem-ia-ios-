@@ -129,7 +129,7 @@ final class SpeechManager: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Esperar a frase estabilizar
+    // MARK: - Aguardar frase
 
     private func scheduleTranslation(
         _ text: String
@@ -139,7 +139,6 @@ final class SpeechManager: NSObject, ObservableObject {
 
         let workItem =
             DispatchWorkItem { [weak self] in
-
                 self?.translate(text)
             }
 
@@ -163,7 +162,6 @@ final class SpeechManager: NSObject, ObservableObject {
             .removeTap(onBus: 0)
 
         recognitionRequest?.endAudio()
-
         recognitionTask?.cancel()
 
         recognitionRequest = nil
@@ -257,7 +255,7 @@ final class SpeechManager: NSObject, ObservableObject {
         }.resume()
     }
 
-    // MARK: - Voz em português
+    // MARK: - Voz portuguesa
 
     private func speakTranslation() {
 
@@ -286,18 +284,17 @@ final class SpeechManager: NSObject, ObservableObject {
         )
     }
 
-    // MARK: - Teste
+    // MARK: - Teste rápido
 
     func testTranslation() {
 
         recognizedText =
-            "こんにちは、元気ですか？"
+            "これはテストです"
 
-        translatedText = ""
+        translatedText =
+            "Este é um teste"
 
-        translate(
-            recognizedText
-        )
+        speakTranslation()
     }
 }
 
@@ -309,7 +306,7 @@ struct TranslationResponse: Codable {
     let translated: String
 }
 
-// MARK: - App
+// MARK: - Aplicativo
 
 @main
 struct DublagemIAApp: App {
@@ -394,10 +391,10 @@ struct ContentView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button("Teste rápido") {
+                Button("🧪 Teste de voz") {
                     speechManager.testTranslation()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
             }
             .padding()
         }
