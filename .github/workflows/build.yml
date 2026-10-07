@@ -1,0 +1,31 @@
+name: Build Dublagem IA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Instalar XcodeGen
+        run: brew install xcodegen
+
+      - name: Gerar projeto Xcode
+        run: xcodegen generate
+
+      - name: Compilar aplicativo
+        run: |
+          xcodebuild \
+            -project DublagemIA.xcodeproj \
+            -scheme DublagemIA \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build
