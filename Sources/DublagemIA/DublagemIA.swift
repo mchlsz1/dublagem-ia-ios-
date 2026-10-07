@@ -10,6 +10,7 @@ final class SpeechManager: NSObject, ObservableObject {
     @Published var translatedText = ""
 
     private let audioEngine = AVAudioEngine()
+    private let synthesizer = AVSpeechSynthesizer()
 
     private let speechRecognizer =
         SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
@@ -20,16 +21,12 @@ final class SpeechManager: NSObject, ObservableObject {
     private var recognitionTask:
         SFSpeechRecognitionTask?
 
-    private let synthesizer = AVSpeechSynthesizer()
-
     // MARK: - Permissões
 
     func requestPermissions() {
 
         SFSpeechRecognizer.requestAuthorization { status in
-            DispatchQueue.main.async {
-                print("Reconhecimento: \(status)")
-            }
+            print("Reconhecimento: \(status)")
         }
 
         AVAudioSession.sharedInstance()
@@ -38,7 +35,7 @@ final class SpeechManager: NSObject, ObservableObject {
             }
     }
 
-    // MARK: - Reconhecimento de japonês
+    // MARK: - Ouvir japonês
 
     func startListening() {
 
@@ -88,17 +85,29 @@ final class SpeechManager: NSObject, ObservableObject {
                     with: request
                 ) { [weak self] result, error in
 
+                    guard let self = self else {
+                        return
+                    }
+
                     if let result = result {
 
+                        let text =
+                            result.bestTranscription
+                            .formattedString
+
                         DispatchQueue.main.async {
-                            self?.recognizedText =
-                                result.bestTranscription
-                                .formattedString
+
+                            self.recognizedText = text
+
+                            // Tradução automática
+                            if !text.isEmpty {
+                                self.translate(text)
+                            }
                         }
                     }
 
                     if error != nil {
-                        self?.stopListening()
+                        self.stopListening()
                     }
                 }
 
@@ -111,11 +120,13 @@ final class SpeechManager: NSObject, ObservableObject {
 
         } catch {
 
-            print("Erro ao iniciar: \(error)")
+            print(
+                "Erro ao iniciar áudio: \(error)"
+            )
         }
     }
 
-    // MARK: - Parar reconhecimento
+    // MARK: - Parar
 
     func stopListening() {
 
@@ -135,11 +146,11 @@ final class SpeechManager: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Tradução
+    // MARK: - Tradução automática
 
-    func translate() {
+    func translate(_ text: String) {
 
-        guard !recognizedText.isEmpty else {
+        guard !text.isEmpty else {
             return
         }
 
@@ -157,11 +168,12 @@ final class SpeechManager: NSObject, ObservableObject {
 
         request.setValue(
             "application/json",
-            forHTTPHeaderField: "Content-Type"
+            forHTTPHeaderField:
+                "Content-Type"
         )
 
         let body = [
-            "text": recognizedText
+            "text": text
         ]
 
         request.httpBody =
@@ -202,26 +214,14 @@ final class SpeechManager: NSObject, ObservableObject {
             } catch {
 
                 print(
-                    "Erro na resposta: \(error)"
+                    "Erro na tradução: \(error)"
                 )
             }
 
         }.resume()
     }
 
-    // MARK: - Teste rápido
-
-    func testTranslation() {
-
-        recognizedText =
-            "こんにちは、元気ですか？"
-
-        translatedText = ""
-
-        translate()
-    }
-
-    // MARK: - Voz em português
+    // MARK: - Voz
 
     func speakTranslation() {
 
@@ -246,6 +246,20 @@ final class SpeechManager: NSObject, ObservableObject {
         utterance.rate = 0.5
 
         synthesizer.speak(utterance)
+    }
+
+    // MARK: - Teste
+
+    func testTranslation() {
+
+        recognizedText =
+            "こんにちは、元気ですか？"
+
+        translatedText = ""
+
+        translate(
+            recognizedText
+        )
     }
 }
 
@@ -344,11 +358,6 @@ struct ContentView: View {
 
                 Button("Teste rápido") {
                     speechManager.testTranslation()
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button("Traduzir") {
-                    speechManager.translate()
                 }
                 .buttonStyle(.bordered)
 
