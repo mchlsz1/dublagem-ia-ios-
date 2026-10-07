@@ -15,6 +15,10 @@ final class SpeechManager: NSObject, ObservableObject {
     @Published var permissionsReady = false
     @Published var permissionMessage = "Permissões necessárias"
 
+    // MARK: - Status da dublagem
+
+    @Published var dubbingStatus = "Aguardando"
+
     private let audioEngine = AVAudioEngine()
     private let synthesizer = AVSpeechSynthesizer()
 
@@ -29,9 +33,19 @@ final class SpeechManager: NSObject, ObservableObject {
     private var recognitionTask:
         SFSpeechRecognitionTask?
 
+    // MARK: - Inicialização
+
+    override init() {
+        super.init()
+
+        synthesizer.delegate = self
+    }
+
     // MARK: - Permissões
 
     func requestPermissions() {
+
+        dubbingStatus = "Solicitando permissões..."
 
         SFSpeechRecognizer.requestAuthorization {
             [weak self] status in
@@ -45,25 +59,34 @@ final class SpeechManager: NSObject, ObservableObject {
                 switch status {
 
                 case .authorized:
+
                     self.requestMicrophonePermission()
 
                 case .denied:
+
                     self.permissionsReady = false
+                    self.dubbingStatus = "Permissão negada"
                     self.permissionMessage =
                         "Permissão de reconhecimento negada. Ative em Ajustes."
 
                 case .restricted:
+
                     self.permissionsReady = false
+                    self.dubbingStatus = "Reconhecimento restrito"
                     self.permissionMessage =
                         "Reconhecimento de fala está restrito neste iPhone."
 
                 case .notDetermined:
+
                     self.permissionsReady = false
+                    self.dubbingStatus = "Aguardando permissão"
                     self.permissionMessage =
                         "Aguardando permissão de reconhecimento."
 
                 @unknown default:
+
                     self.permissionsReady = false
+                    self.dubbingStatus = "Erro"
                     self.permissionMessage =
                         "Não foi possível verificar a permissão."
                 }
@@ -85,12 +108,14 @@ final class SpeechManager: NSObject, ObservableObject {
                 if granted {
 
                     self.permissionsReady = true
+                    self.dubbingStatus = "Pronto"
                     self.permissionMessage =
                         "Tudo pronto para ouvir japonês."
 
                 } else {
 
                     self.permissionsReady = false
+                    self.dubbingStatus = "Microfone negado"
                     self.permissionMessage =
                         "Permissão do microfone negada. Ative em Ajustes."
                 }
@@ -108,6 +133,8 @@ final class SpeechManager: NSObject, ObservableObject {
 
         guard permissionsReady else {
 
+            dubbingStatus = "Permissões necessárias"
+
             permissionMessage =
                 "Autorize o reconhecimento e o microfone primeiro."
 
@@ -115,6 +142,8 @@ final class SpeechManager: NSObject, ObservableObject {
         }
 
         guard speechRecognizer?.isAvailable == true else {
+
+            dubbingStatus = "Reconhecimento indisponível"
 
             permissionMessage =
                 "O reconhecimento de japonês não está disponível agora."
@@ -181,9 +210,19 @@ final class SpeechManager: NSObject, ObservableObject {
                             self.recognizedText =
                                 text
 
-                            // Só traduz quando a frase
-                            // estiver finalizada.
+                            if !text.isEmpty {
+
+                                self.dubbingStatus =
+                                    "🎙️ Ouvindo"
+                            }
+
+                            // Traduz somente quando
+                            // a frase estiver finalizada.
                             if result.isFinal {
+
+                                self.dubbingStatus =
+                                    "🌐 Traduzindo"
+
                                 self.translate(text)
                             }
                         }
@@ -192,6 +231,7 @@ final class SpeechManager: NSObject, ObservableObject {
                     if error != nil {
 
                         DispatchQueue.main.async {
+
                             self.stopListening()
                         }
                     }
@@ -204,6 +244,10 @@ final class SpeechManager: NSObject, ObservableObject {
             DispatchQueue.main.async {
 
                 self.isListening = true
+
+                self.dubbingStatus =
+                    "🎙️ Ouvindo"
+
                 self.permissionMessage =
                     "Ouvindo japonês..."
             }
@@ -216,6 +260,9 @@ final class SpeechManager: NSObject, ObservableObject {
 
             permissionMessage =
                 "Não foi possível iniciar o microfone."
+
+            dubbingStatus =
+                "Erro no áudio"
 
             stopListening()
         }
@@ -242,7 +289,12 @@ final class SpeechManager: NSObject, ObservableObject {
             self.isListening = false
 
             if self.permissionsReady {
-                self.permissionMessage = "Pronto."
+
+                self.dubbingStatus =
+                    "Pronto"
+
+                self.permissionMessage =
+                    "Pronto."
             }
         }
     }
@@ -257,10 +309,23 @@ final class SpeechManager: NSObject, ObservableObject {
             return
         }
 
+        DispatchQueue.main.async {
+
+            self.dubbingStatus =
+                "🌐 Traduzindo"
+        }
+
         guard let url = URL(
             string:
                 "https://dublagem-ia-ios.vercel.app/api/translate"
         ) else {
+
+            DispatchQueue.main.async {
+
+                self.dubbingStatus =
+                    "Erro na tradução"
+            }
+
             return
         }
 
@@ -288,6 +353,10 @@ final class SpeechManager: NSObject, ObservableObject {
             with: request
         ) { [weak self] data, _, error in
 
+            guard let self = self else {
+                return
+            }
+
             guard let data = data,
                   error == nil else {
 
@@ -296,6 +365,12 @@ final class SpeechManager: NSObject, ObservableObject {
                     (error?.localizedDescription ??
                      "desconhecido")
                 )
+
+                DispatchQueue.main.async {
+
+                    self.dubbingStatus =
+                        "Erro na tradução"
+                }
 
                 return
             }
@@ -310,12 +385,11 @@ final class SpeechManager: NSObject, ObservableObject {
 
                 DispatchQueue.main.async {
 
-                    guard let self = self else {
-                        return
-                    }
-
                     self.translatedText =
                         response.translated
+
+                    self.dubbingStatus =
+                        "🔊 Falando"
 
                     self.speakTranslation()
                 }
@@ -325,6 +399,12 @@ final class SpeechManager: NSObject, ObservableObject {
                 print(
                     "Erro na tradução: \(error)"
                 )
+
+                DispatchQueue.main.async {
+
+                    self.dubbingStatus =
+                        "Erro na tradução"
+                }
             }
 
         }.resume()
@@ -344,6 +424,10 @@ final class SpeechManager: NSObject, ObservableObject {
     // MARK: - Voz
 
     private func speak(text: String) {
+
+        guard !text.isEmpty else {
+            return
+        }
 
         synthesizer.stopSpeaking(
             at: .immediate
@@ -365,6 +449,9 @@ final class SpeechManager: NSObject, ObservableObject {
         utterance.volume =
             speechVolume
 
+        dubbingStatus =
+            "🔊 Falando"
+
         synthesizer.speak(
             utterance
         )
@@ -377,6 +464,14 @@ final class SpeechManager: NSObject, ObservableObject {
         synthesizer.stopSpeaking(
             at: .immediate
         )
+
+        DispatchQueue.main.async {
+
+            self.dubbingStatus =
+                self.permissionsReady
+                ? "Pronto"
+                : "Aguardando"
+        }
     }
 
     // MARK: - Teste de velocidade e volume
@@ -392,7 +487,54 @@ final class SpeechManager: NSObject, ObservableObject {
         translatedText =
             text
 
+        dubbingStatus =
+            "🔊 Falando"
+
         speak(text: text)
+    }
+}
+
+// MARK: - Delegate da voz
+
+extension SpeechManager:
+    AVSpeechSynthesizerDelegate {
+
+    func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didStart utterance: AVSpeechUtterance
+    ) {
+
+        DispatchQueue.main.async {
+
+            self.dubbingStatus =
+                "🔊 Falando"
+        }
+    }
+
+    func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didFinish utterance: AVSpeechUtterance
+    ) {
+
+        DispatchQueue.main.async {
+
+            self.dubbingStatus =
+                "Pronto"
+        }
+    }
+
+    func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didCancel utterance: AVSpeechUtterance
+    ) {
+
+        DispatchQueue.main.async {
+
+            self.dubbingStatus =
+                self.permissionsReady
+                ? "Pronto"
+                : "Aguardando"
+        }
     }
 }
 
@@ -434,6 +576,31 @@ struct ContentView: View {
                     .font(.largeTitle)
                     .bold()
 
+                // MARK: - Status
+
+                VStack(spacing: 8) {
+
+                    Text("Status da dublagem")
+                        .font(.headline)
+
+                    Text(
+                        speechManager.dubbingStatus
+                    )
+                    .font(.title3)
+                    .bold()
+
+                }
+                .frame(
+                    maxWidth: .infinity
+                )
+                .padding()
+                .background(
+                    .gray.opacity(0.15)
+                )
+                .cornerRadius(12)
+
+                // MARK: - Japonês
+
                 Text("Japonês")
                     .font(.headline)
 
@@ -451,6 +618,8 @@ struct ContentView: View {
                     .gray.opacity(0.15)
                 )
                 .cornerRadius(12)
+
+                // MARK: - Português
 
                 Text("Português")
                     .font(.headline)
