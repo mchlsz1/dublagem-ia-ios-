@@ -172,20 +172,22 @@ final class SpeechManager: NSObject, ObservableObject {
                         return
                     }
 
-                    if let result = result {
+                 if let result = result {
 
-                        let text =
-                            result.bestTranscription
-                                .formattedString
+    let text =
+        result.bestTranscription
+            .formattedString
 
-                        DispatchQueue.main.async {
+    DispatchQueue.main.async {
 
-                            self.recognizedText = text
+        self.recognizedText = text
 
-                            self.scheduleTranslation(text)
-                        }
-                    }
-
+        // Só traduz quando a frase estiver finalizada.
+        if result.isFinal {
+            self.translate(text)
+        }
+    }
+}
                     if error != nil {
 
                         DispatchQueue.main.async {
