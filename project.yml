@@ -1,0 +1,19 @@
+name: DublagemIA
+
+options:
+  bundleIdPrefix: com.dublagemia
+  deploymentTarget:
+    iOS: "18.0"
+
+targets:
+  DublagemIA:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/DublagemIA
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dublagemia.app
+        INFOPLIST_KEY_CFBundleDisplayName: Dublagem IA
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "O app precisa do microfone para os testes de áudio."
+        SWIFT_VERSION: "5.0"
