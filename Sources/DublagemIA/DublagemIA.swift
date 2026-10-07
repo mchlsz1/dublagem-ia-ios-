@@ -21,6 +21,8 @@ final class SpeechManager: NSObject, ObservableObject {
     private var recognitionTask:
         SFSpeechRecognitionTask?
 
+    private var translationWorkItem: DispatchWorkItem?
+
     // MARK: - Permissões
 
     func requestPermissions() {
@@ -35,11 +37,13 @@ final class SpeechManager: NSObject, ObservableObject {
             }
     }
 
-    // MARK: - Ouvir japonês
+    // MARK: - Reconhecimento
 
     func startListening() {
 
-        guard !isListening else { return }
+        guard !isListening else {
+            return
+        }
 
         recognitionTask?.cancel()
 
@@ -99,10 +103,9 @@ final class SpeechManager: NSObject, ObservableObject {
 
                             self.recognizedText = text
 
-                            // Tradução automática
-                            if !text.isEmpty {
-                                self.translate(text)
-                            }
+                            self.scheduleTranslation(
+                                text
+                            )
                         }
                     }
 
@@ -126,9 +129,33 @@ final class SpeechManager: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Esperar a frase estabilizar
+
+    private func scheduleTranslation(
+        _ text: String
+    ) {
+
+        translationWorkItem?.cancel()
+
+        let workItem =
+            DispatchWorkItem { [weak self] in
+
+                self?.translate(text)
+            }
+
+        translationWorkItem = workItem
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + 1.0,
+            execute: workItem
+        )
+    }
+
     // MARK: - Parar
 
     func stopListening() {
+
+        translationWorkItem?.cancel()
 
         audioEngine.stop()
 
@@ -136,6 +163,7 @@ final class SpeechManager: NSObject, ObservableObject {
             .removeTap(onBus: 0)
 
         recognitionRequest?.endAudio()
+
         recognitionTask?.cancel()
 
         recognitionRequest = nil
@@ -146,9 +174,11 @@ final class SpeechManager: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Tradução automática
+    // MARK: - Tradução
 
-    func translate(_ text: String) {
+    private func translate(
+        _ text: String
+    ) {
 
         guard !text.isEmpty else {
             return
@@ -207,8 +237,14 @@ final class SpeechManager: NSObject, ObservableObject {
 
                 DispatchQueue.main.async {
 
-                    self?.translatedText =
+                    guard let self = self else {
+                        return
+                    }
+
+                    self.translatedText =
                         response.translated
+
+                    self.speakTranslation()
                 }
 
             } catch {
@@ -221,9 +257,9 @@ final class SpeechManager: NSObject, ObservableObject {
         }.resume()
     }
 
-    // MARK: - Voz
+    // MARK: - Voz em português
 
-    func speakTranslation() {
+    private func speakTranslation() {
 
         guard !translatedText.isEmpty else {
             return
@@ -245,7 +281,9 @@ final class SpeechManager: NSObject, ObservableObject {
 
         utterance.rate = 0.5
 
-        synthesizer.speak(utterance)
+        synthesizer.speak(
+            utterance
+        )
     }
 
     // MARK: - Teste
@@ -263,7 +301,7 @@ final class SpeechManager: NSObject, ObservableObject {
     }
 }
 
-// MARK: - Resposta da API
+// MARK: - API
 
 struct TranslationResponse: Codable {
 
@@ -360,11 +398,6 @@ struct ContentView: View {
                     speechManager.testTranslation()
                 }
                 .buttonStyle(.bordered)
-
-                Button("🔊 Ouvir tradução") {
-                    speechManager.speakTranslation()
-                }
-                .buttonStyle(.borderedProminent)
             }
             .padding()
         }
