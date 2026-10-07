@@ -28,11 +28,7 @@ final class SpeechManager: NSObject, ObservableObject {
 
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async {
-                if status == .authorized {
-                    print("Reconhecimento autorizado")
-                } else {
-                    print("Reconhecimento não autorizado")
-                }
+                print("Reconhecimento: \(status)")
             }
         }
 
@@ -42,13 +38,11 @@ final class SpeechManager: NSObject, ObservableObject {
             }
     }
 
-    // MARK: - Reconhecimento
+    // MARK: - Reconhecimento de japonês
 
     func startListening() {
 
-        guard !isListening else {
-            return
-        }
+        guard !isListening else { return }
 
         recognitionTask?.cancel()
 
@@ -56,7 +50,6 @@ final class SpeechManager: NSObject, ObservableObject {
             SFSpeechAudioBufferRecognitionRequest()
 
         request.shouldReportPartialResults = true
-
         recognitionRequest = request
 
         let session =
@@ -98,7 +91,6 @@ final class SpeechManager: NSObject, ObservableObject {
                     if let result = result {
 
                         DispatchQueue.main.async {
-
                             self?.recognizedText =
                                 result.bestTranscription
                                 .formattedString
@@ -111,7 +103,6 @@ final class SpeechManager: NSObject, ObservableObject {
                 }
 
             audioEngine.prepare()
-
             try audioEngine.start()
 
             DispatchQueue.main.async {
@@ -120,11 +111,11 @@ final class SpeechManager: NSObject, ObservableObject {
 
         } catch {
 
-            print("Erro ao iniciar áudio: \(error)")
+            print("Erro ao iniciar: \(error)")
         }
     }
 
-    // MARK: - Parar
+    // MARK: - Parar reconhecimento
 
     func stopListening() {
 
@@ -134,7 +125,6 @@ final class SpeechManager: NSObject, ObservableObject {
             .removeTap(onBus: 0)
 
         recognitionRequest?.endAudio()
-
         recognitionTask?.cancel()
 
         recognitionRequest = nil
@@ -187,7 +177,7 @@ final class SpeechManager: NSObject, ObservableObject {
                   error == nil else {
 
                 print(
-                    "Erro na API: " +
+                    "Erro API: " +
                     (error?.localizedDescription ??
                      "desconhecido")
                 )
@@ -212,11 +202,23 @@ final class SpeechManager: NSObject, ObservableObject {
             } catch {
 
                 print(
-                    "Erro ao interpretar resposta: \(error)"
+                    "Erro na resposta: \(error)"
                 )
             }
 
         }.resume()
+    }
+
+    // MARK: - Teste rápido
+
+    func testTranslation() {
+
+        recognizedText =
+            "こんにちは、元気ですか？"
+
+        translatedText = ""
+
+        translate()
     }
 
     // MARK: - Voz em português
@@ -255,7 +257,7 @@ struct TranslationResponse: Codable {
     let translated: String
 }
 
-// MARK: - Aplicativo
+// MARK: - App
 
 @main
 struct DublagemIAApp: App {
@@ -322,7 +324,6 @@ struct ContentView: View {
                 .cornerRadius(12)
 
                 Button("Autorizar") {
-
                     speechManager.requestPermissions()
                 }
                 .buttonStyle(.bordered)
@@ -334,24 +335,24 @@ struct ContentView: View {
                 ) {
 
                     if speechManager.isListening {
-
                         speechManager.stopListening()
-
                     } else {
-
                         speechManager.startListening()
                     }
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button("Traduzir") {
+                Button("Teste rápido") {
+                    speechManager.testTranslation()
+                }
+                .buttonStyle(.borderedProminent)
 
+                Button("Traduzir") {
                     speechManager.translate()
                 }
                 .buttonStyle(.bordered)
 
                 Button("🔊 Ouvir tradução") {
-
                     speechManager.speakTranslation()
                 }
                 .buttonStyle(.borderedProminent)
