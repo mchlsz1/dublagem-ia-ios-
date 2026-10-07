@@ -9,14 +9,18 @@ final class SpeechManager: NSObject, ObservableObject {
     @Published var recognizedText = ""
     @Published var translatedText = ""
 
-    // Controle da velocidade da voz
     @Published var speechRate: Float = 0.50
+
+    @Published var permissionsReady = false
+    @Published var permissionMessage = "Permissões necessárias"
 
     private let audioEngine = AVAudioEngine()
     private let synthesizer = AVSpeechSynthesizer()
 
     private let speechRecognizer =
-        SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
+        SFSpeechRecognizer(
+            locale: Locale(identifier: "ja-JP")
+        )
 
     private var recognitionRequest:
         SFSpeechAudioBufferRecognitionRequest?
@@ -24,27 +28,107 @@ final class SpeechManager: NSObject, ObservableObject {
     private var recognitionTask:
         SFSpeechRecognitionTask?
 
-    private var translationWorkItem: DispatchWorkItem?
+    private var translationWorkItem:
+        DispatchWorkItem?
 
     // MARK: - Permissões
 
     func requestPermissions() {
 
-        SFSpeechRecognizer.requestAuthorization { status in
-            print("Reconhecimento: \(status)")
-        }
+        SFSpeechRecognizer.requestAuthorization {
+            [weak self] status in
 
-        AVAudioSession.sharedInstance()
-            .requestRecordPermission { granted in
-                print("Microfone: \(granted)")
+            DispatchQueue.main.async {
+
+                guard let self = self else {
+                    return
+                }
+
+                switch status {
+
+                case .authorized:
+
+                    self.requestMicrophonePermission()
+
+                case .denied:
+
+                    self.permissionsReady = false
+                    self.permissionMessage =
+                        "Permissão de reconhecimento negada. Ative em Ajustes."
+
+                case .restricted:
+
+                    self.permissionsReady = false
+                    self.permissionMessage =
+                        "Reconhecimento de fala está restrito neste iPhone."
+
+                case .notDetermined:
+
+                    self.permissionsReady = false
+                    self.permissionMessage =
+                        "Aguardando permissão de reconhecimento."
+
+                @unknown default:
+
+                    self.permissionsReady = false
+                    self.permissionMessage =
+                        "Não foi possível verificar a permissão."
+                }
             }
+        }
     }
 
-    // MARK: - Reconhecimento
+    private func requestMicrophonePermission() {
+
+        AVAudioApplication.requestRecordPermission {
+            [weak self] granted in
+
+            DispatchQueue.main.async {
+
+                guard let self = self else {
+                    return
+                }
+
+                if granted {
+
+                    self.permissionsReady = true
+                    self.permissionMessage =
+                        "Tudo pronto para ouvir japonês."
+
+                } else {
+
+                    self.permissionsReady = false
+                    self.permissionMessage =
+                        "Permissão do microfone negada. Ative em Ajustes."
+                }
+            }
+        }
+    }
+
+    // MARK: - Iniciar reconhecimento
 
     func startListening() {
 
         guard !isListening else {
+            return
+        }
+
+        // Segurança extra:
+        // não inicia sem as permissões.
+        guard permissionsReady else {
+
+            permissionMessage =
+                "Autorize o reconhecimento e o microfone primeiro."
+
+            return
+        }
+
+        // Verifica se o reconhecimento japonês está disponível.
+        guard speechRecognizer?.isAvailable == true else {
+
+            permissionMessage =
+                "O reconhecimento de japonês não está disponível agora."
+
             return
         }
 
@@ -54,6 +138,7 @@ final class SpeechManager: NSObject, ObservableObject {
             SFSpeechAudioBufferRecognitionRequest()
 
         request.shouldReportPartialResults = true
+
         recognitionRequest = request
 
         let session =
@@ -73,9 +158,13 @@ final class SpeechManager: NSObject, ObservableObject {
                 audioEngine.inputNode
 
             let format =
-                inputNode.outputFormat(forBus: 0)
+                inputNode.outputFormat(
+                    forBus: 0
+                )
 
-            inputNode.removeTap(onBus: 0)
+            inputNode.removeTap(
+                onBus: 0
+            )
 
             inputNode.installTap(
                 onBus: 0,
@@ -100,11 +189,12 @@ final class SpeechManager: NSObject, ObservableObject {
 
                         let text =
                             result.bestTranscription
-                            .formattedString
+                                .formattedString
 
                         DispatchQueue.main.async {
 
-                            self.recognizedText = text
+                            self.recognizedText =
+                                text
 
                             self.scheduleTranslation(
                                 text
@@ -113,15 +203,23 @@ final class SpeechManager: NSObject, ObservableObject {
                     }
 
                     if error != nil {
-                        self.stopListening()
+
+                        DispatchQueue.main.async {
+                            self.stopListening()
+                        }
                     }
                 }
 
             audioEngine.prepare()
+
             try audioEngine.start()
 
             DispatchQueue.main.async {
+
                 self.isListening = true
+
+                self.permissionMessage =
+                    "Ouvindo japonês..."
             }
 
         } catch {
@@ -129,10 +227,15 @@ final class SpeechManager: NSObject, ObservableObject {
             print(
                 "Erro ao iniciar áudio: \(error)"
             )
+
+            permissionMessage =
+                "Não foi possível iniciar o microfone."
+
+            stopListening()
         }
     }
 
-    // MARK: - Aguardar frase
+    // MARK: - Tradução automática
 
     private func scheduleTranslation(
         _ text: String
@@ -142,10 +245,12 @@ final class SpeechManager: NSObject, ObservableObject {
 
         let workItem =
             DispatchWorkItem { [weak self] in
+
                 self?.translate(text)
             }
 
-        translationWorkItem = workItem
+        translationWorkItem =
+            workItem
 
         DispatchQueue.main.asyncAfter(
             deadline: .now() + 1.0,
@@ -161,17 +266,25 @@ final class SpeechManager: NSObject, ObservableObject {
 
         audioEngine.stop()
 
-        audioEngine.inputNode
-            .removeTap(onBus: 0)
+        audioEngine.inputNode.removeTap(
+            onBus: 0
+        )
 
         recognitionRequest?.endAudio()
+
         recognitionTask?.cancel()
 
         recognitionRequest = nil
         recognitionTask = nil
 
         DispatchQueue.main.async {
+
             self.isListening = false
+
+            if self.permissionsReady {
+                self.permissionMessage =
+                    "Pronto."
+            }
         }
     }
 
@@ -254,6 +367,7 @@ final class SpeechManager: NSObject, ObservableObject {
                     "Erro na tradução: \(error)"
                 )
             }
+
         }.resume()
     }
 
@@ -279,15 +393,15 @@ final class SpeechManager: NSObject, ObservableObject {
                 language: "pt-BR"
             )
 
-        // Usa a velocidade escolhida no controle
-        utterance.rate = speechRate
+        utterance.rate =
+            speechRate
 
         synthesizer.speak(
             utterance
         )
     }
 
-    // MARK: - Teste rápido
+    // MARK: - Teste de voz
 
     func testTranslation() {
 
@@ -301,7 +415,7 @@ final class SpeechManager: NSObject, ObservableObject {
     }
 }
 
-// MARK: - API
+// MARK: - Resposta da API
 
 struct TranslationResponse: Codable {
 
@@ -375,7 +489,34 @@ struct ContentView: View {
                 )
                 .cornerRadius(12)
 
-                // MARK: - Controle de velocidade
+                // MARK: - Status das permissões
+
+                VStack(spacing: 8) {
+
+                    Image(
+                        systemName:
+                            speechManager.permissionsReady
+                            ? "checkmark.circle.fill"
+                            : "lock.circle"
+                    )
+                    .font(.title2)
+
+                    Text(
+                        speechManager.permissionMessage
+                    )
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                }
+                .frame(
+                    maxWidth: .infinity
+                )
+                .padding()
+                .background(
+                    .gray.opacity(0.15)
+                )
+                .cornerRadius(12)
+
+                // MARK: - Velocidade
 
                 VStack(spacing: 8) {
 
@@ -395,11 +536,14 @@ struct ContentView: View {
                             )
                         )
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(
+                            .secondary
+                        )
                     }
 
                     Slider(
-                        value: $speechManager.speechRate,
+                        value:
+                            $speechManager.speechRate,
                         in: 0.30...0.80,
                         step: 0.05
                     )
@@ -419,7 +563,9 @@ struct ContentView: View {
                         Text("Rápida")
                             .font(.caption)
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(
+                        .secondary
+                    )
                 }
                 .padding()
                 .background(
@@ -427,10 +573,15 @@ struct ContentView: View {
                 )
                 .cornerRadius(12)
 
-                Button("Autorizar") {
+                // MARK: - Autorizar
+
+                Button("Autorizar permissões") {
+
                     speechManager.requestPermissions()
                 }
                 .buttonStyle(.bordered)
+
+                // MARK: - Ouvir
 
                 Button(
                     speechManager.isListening
@@ -439,17 +590,31 @@ struct ContentView: View {
                 ) {
 
                     if speechManager.isListening {
+
                         speechManager.stopListening()
+
                     } else {
+
                         speechManager.startListening()
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(
+                    .borderedProminent
+                )
+                .disabled(
+                    !speechManager.permissionsReady
+                    && !speechManager.isListening
+                )
+
+                // MARK: - Teste de voz
 
                 Button("🧪 Teste de voz") {
+
                     speechManager.testTranslation()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(
+                    .borderedProminent
+                )
             }
             .padding()
         }
