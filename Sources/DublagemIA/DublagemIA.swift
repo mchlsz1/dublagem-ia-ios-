@@ -1,73 +1,110 @@
 import SwiftUI
 import AVFoundation
+import Speech
 
-final class AudioManager: ObservableObject {
-    @Published var isRecording = false
+final class SpeechManager: NSObject, ObservableObject {
+    @Published var isListening = false
+    @Published var recognizedText = ""
 
     private let audioEngine = AVAudioEngine()
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
 
-    func requestPermission() {
-        AVAudioApplication.requestRecordPermission { granted in
+    func requestPermissions() {
+        SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async {
-                if granted {
-                    print("Permissão de microfone concedida")
+                if status == .authorized {
+                    print("Reconhecimento de fala autorizado")
                 } else {
-                    print("Permissão de microfone negada")
+                    print("Reconhecimento de fala não autorizado")
                 }
             }
         }
     }
 
-    func startAudioCapture() {
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
+    func startListening() {
+        guard !isListening else { return }
 
-        inputNode.removeTap(onBus: 0)
+        recognitionTask?.cancel()
+        recognitionTask = nil
 
-        inputNode.installTap(
-            onBus: 0,
-            bufferSize: 1024,
-            format: format
-        ) { buffer, _ in
-            print("Áudio recebido: \(buffer.frameLength) frames")
-        }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        recognitionRequest = request
+
+        let audioSession = AVAudioSession.sharedInstance()
 
         do {
-            try AVAudioSession.sharedInstance().setCategory(
+            try audioSession.setCategory(
                 .record,
                 mode: .measurement,
-                options: []
+                options: [.duckOthers]
             )
 
-            try AVAudioSession.sharedInstance().setActive(true)
+            try audioSession.setActive(
+                true,
+                options: .notifyOthersOnDeactivation
+            )
 
+            let inputNode = audioEngine.inputNode
+            let recordingFormat = inputNode.outputFormat(forBus: 0)
+
+            inputNode.removeTap(onBus: 0)
+
+            inputNode.installTap(
+                onBus: 0,
+                bufferSize: 1024,
+                format: recordingFormat
+            ) { [weak self] buffer, _ in
+                self?.recognitionRequest?.append(buffer)
+            }
+
+            recognitionTask = speechRecognizer?.recognitionTask(
+                with: request
+            ) { [weak self] result, error in
+
+                if let result = result {
+                    DispatchQueue.main.async {
+                        self?.recognizedText = result.bestTranscription.formattedString
+                    }
+                }
+
+                if error != nil {
+                    self?.stopListening()
+                }
+            }
+
+            audioEngine.prepare()
             try audioEngine.start()
 
             DispatchQueue.main.async {
-                self.isRecording = true
+                self.isListening = true
             }
 
-            print("Captura de áudio iniciada")
         } catch {
-            print("Erro ao iniciar áudio: \(error)")
+            print("Erro ao iniciar reconhecimento: \(error)")
         }
     }
 
-    func stopAudioCapture() {
+    func stopListening() {
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
 
-        do {
-            try AVAudioSession.sharedInstance().setActive(false)
-        } catch {
-            print("Erro ao desativar áudio: \(error)")
-        }
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+
+        recognitionRequest = nil
+        recognitionTask = nil
+
+        try? AVAudioSession.sharedInstance().setActive(
+            false,
+            options: .notifyOthersOnDeactivation
+        )
 
         DispatchQueue.main.async {
-            self.isRecording = false
+            self.isListening = false
         }
-
-        print("Captura de áudio parada")
     }
 }
 
@@ -81,35 +118,47 @@ struct DublagemIAApp: App {
 }
 
 struct ContentView: View {
-    @StateObject private var audioManager = AudioManager()
+    @StateObject private var speechManager = SpeechManager()
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
+
             Text("Dublagem IA")
                 .font(.largeTitle)
                 .bold()
 
             Text(
-                audioManager.isRecording
-                ? "Capturando áudio..."
+                speechManager.isListening
+                ? "Ouvindo japonês..."
                 : "Pronto para testar"
             )
             .foregroundStyle(.secondary)
 
-            Button("Permitir microfone") {
-                audioManager.requestPermission()
+            ScrollView {
+                Text(
+                    speechManager.recognizedText.isEmpty
+                    ? "O texto reconhecido aparecerá aqui."
+                    : speechManager.recognizedText
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+            }
+            .frame(maxHeight: 250)
+
+            Button("Autorizar reconhecimento") {
+                speechManager.requestPermissions()
             }
             .buttonStyle(.bordered)
 
             Button(
-                audioManager.isRecording
-                ? "Parar captura"
-                : "Testar captura"
+                speechManager.isListening
+                ? "Parar"
+                : "Começar reconhecimento"
             ) {
-                if audioManager.isRecording {
-                    audioManager.stopAudioCapture()
+                if speechManager.isListening {
+                    speechManager.stopListening()
                 } else {
-                    audioManager.startAudioCapture()
+                    speechManager.startListening()
                 }
             }
             .buttonStyle(.borderedProminent)
