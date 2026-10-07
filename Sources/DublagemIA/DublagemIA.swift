@@ -10,6 +10,7 @@ final class SpeechManager: NSObject, ObservableObject {
     @Published var translatedText = ""
 
     @Published var speechRate: Float = 0.50
+    @Published var speechVolume: Float = 1.00
 
     @Published var permissionsReady = false
     @Published var permissionMessage = "Permissões necessárias"
@@ -27,9 +28,6 @@ final class SpeechManager: NSObject, ObservableObject {
 
     private var recognitionTask:
         SFSpeechRecognitionTask?
-
-    private var translationWorkItem:
-        DispatchWorkItem?
 
     // MARK: - Permissões
 
@@ -172,22 +170,25 @@ final class SpeechManager: NSObject, ObservableObject {
                         return
                     }
 
-                 if let result = result {
+                    if let result = result {
 
-    let text =
-        result.bestTranscription
-            .formattedString
+                        let text =
+                            result.bestTranscription
+                                .formattedString
 
-    DispatchQueue.main.async {
+                        DispatchQueue.main.async {
 
-        self.recognizedText = text
+                            self.recognizedText =
+                                text
 
-        // Só traduz quando a frase estiver finalizada.
-        if result.isFinal {
-            self.translate(text)
-        }
-    }
-}
+                            // Só traduz quando a frase
+                            // estiver finalizada.
+                            if result.isFinal {
+                                self.translate(text)
+                            }
+                        }
+                    }
+
                     if error != nil {
 
                         DispatchQueue.main.async {
@@ -197,6 +198,7 @@ final class SpeechManager: NSObject, ObservableObject {
                 }
 
             audioEngine.prepare()
+
             try audioEngine.start()
 
             DispatchQueue.main.async {
@@ -219,32 +221,9 @@ final class SpeechManager: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Tradução automática
-
-    private func scheduleTranslation(
-        _ text: String
-    ) {
-
-        translationWorkItem?.cancel()
-
-        let workItem =
-            DispatchWorkItem { [weak self] in
-                self?.translate(text)
-            }
-
-        translationWorkItem = workItem
-
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + 1.0,
-            execute: workItem
-        )
-    }
-
-    // MARK: - Parar
+    // MARK: - Parar reconhecimento
 
     func stopListening() {
-
-        translationWorkItem?.cancel()
 
         audioEngine.stop()
 
@@ -351,7 +330,7 @@ final class SpeechManager: NSObject, ObservableObject {
         }.resume()
     }
 
-    // MARK: - Voz
+    // MARK: - Falar tradução
 
     private func speakTranslation() {
 
@@ -362,7 +341,7 @@ final class SpeechManager: NSObject, ObservableObject {
         speak(text: translatedText)
     }
 
-    // MARK: - Falar texto
+    // MARK: - Voz
 
     private func speak(text: String) {
 
@@ -383,20 +362,32 @@ final class SpeechManager: NSObject, ObservableObject {
         utterance.rate =
             speechRate
 
+        utterance.volume =
+            speechVolume
+
         synthesizer.speak(
             utterance
         )
     }
 
-    // MARK: - Teste de velocidade
+    // MARK: - Parar voz
+
+    func stopVoice() {
+
+        synthesizer.stopSpeaking(
+            at: .immediate
+        )
+    }
+
+    // MARK: - Teste de velocidade e volume
 
     func testVoiceSpeed() {
 
         let text =
-            "Este é um teste da velocidade da voz."
+            "Este é um teste da velocidade e do volume da voz."
 
         recognizedText =
-            "これは速度のテストです"
+            "これは速度と音量のテストです"
 
         translatedText =
             text
@@ -526,7 +517,9 @@ struct ContentView: View {
                             )
                         )
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(
+                            .secondary
+                        )
                     }
 
                     Slider(
@@ -551,7 +544,63 @@ struct ContentView: View {
                         Text("Rápida")
                             .font(.caption)
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(
+                        .secondary
+                    )
+                }
+                .padding()
+                .background(
+                    .gray.opacity(0.15)
+                )
+                .cornerRadius(12)
+
+                // MARK: - Volume
+
+                VStack(spacing: 8) {
+
+                    HStack {
+
+                        Text("🔊")
+
+                        Text("Volume da voz")
+                            .font(.headline)
+
+                        Spacer()
+
+                        Text(
+                            "\(Int(speechManager.speechVolume * 100))%"
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(
+                            .secondary
+                        )
+                    }
+
+                    Slider(
+                        value:
+                            $speechManager.speechVolume,
+                        in: 0.0...1.0,
+                        step: 0.05
+                    )
+
+                    HStack {
+
+                        Text("0%")
+                            .font(.caption)
+
+                        Spacer()
+
+                        Text("50%")
+                            .font(.caption)
+
+                        Spacer()
+
+                        Text("100%")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(
+                        .secondary
+                    )
                 }
                 .padding()
                 .background(
@@ -584,19 +633,31 @@ struct ContentView: View {
                         speechManager.startListening()
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(
+                    .borderedProminent
+                )
                 .disabled(
                     !speechManager.permissionsReady
                     && !speechManager.isListening
                 )
 
-                // MARK: - Testar velocidade
+                // MARK: - Teste
 
-                Button("🔊 Testar velocidade") {
+                Button("🔊 Testar voz") {
 
                     speechManager.testVoiceSpeed()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(
+                    .borderedProminent
+                )
+
+                // MARK: - Parar voz
+
+                Button("⏹️ Parar voz") {
+
+                    speechManager.stopVoice()
+                }
+                .buttonStyle(.bordered)
             }
             .padding()
         }
