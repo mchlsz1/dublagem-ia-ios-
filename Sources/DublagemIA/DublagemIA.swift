@@ -1,13 +1,16 @@
 import SwiftUI
 import AVFoundation
+import AVFAudio
 import Speech
 
 final class SpeechManager: NSObject, ObservableObject {
+
     @Published var isListening = false
     @Published var recognizedText = ""
     @Published var translatedText = ""
 
     private let audioEngine = AVAudioEngine()
+
     private let speechRecognizer =
         SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
 
@@ -17,11 +20,18 @@ final class SpeechManager: NSObject, ObservableObject {
     private var recognitionTask:
         SFSpeechRecognitionTask?
 
+    private let synthesizer = AVSpeechSynthesizer()
+
+    // MARK: - Permissões
+
     func requestPermissions() {
+
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async {
                 if status == .authorized {
                     print("Reconhecimento autorizado")
+                } else {
+                    print("Reconhecimento não autorizado")
                 }
             }
         }
@@ -32,8 +42,13 @@ final class SpeechManager: NSObject, ObservableObject {
             }
     }
 
+    // MARK: - Reconhecimento
+
     func startListening() {
-        guard !isListening else { return }
+
+        guard !isListening else {
+            return
+        }
 
         recognitionTask?.cancel()
 
@@ -41,11 +56,14 @@ final class SpeechManager: NSObject, ObservableObject {
             SFSpeechAudioBufferRecognitionRequest()
 
         request.shouldReportPartialResults = true
+
         recognitionRequest = request
 
-        let session = AVAudioSession.sharedInstance()
+        let session =
+            AVAudioSession.sharedInstance()
 
         do {
+
             try session.setCategory(
                 .record,
                 mode: .measurement,
@@ -54,8 +72,11 @@ final class SpeechManager: NSObject, ObservableObject {
 
             try session.setActive(true)
 
-            let inputNode = audioEngine.inputNode
-            let format = inputNode.outputFormat(forBus: 0)
+            let inputNode =
+                audioEngine.inputNode
+
+            let format =
+                inputNode.outputFormat(forBus: 0)
 
             inputNode.removeTap(onBus: 0)
 
@@ -75,7 +96,9 @@ final class SpeechManager: NSObject, ObservableObject {
                 ) { [weak self] result, error in
 
                     if let result = result {
+
                         DispatchQueue.main.async {
+
                             self?.recognizedText =
                                 result.bestTranscription
                                 .formattedString
@@ -88,6 +111,7 @@ final class SpeechManager: NSObject, ObservableObject {
                 }
 
             audioEngine.prepare()
+
             try audioEngine.start()
 
             DispatchQueue.main.async {
@@ -95,17 +119,22 @@ final class SpeechManager: NSObject, ObservableObject {
             }
 
         } catch {
-            print("Erro: \(error)")
+
+            print("Erro ao iniciar áudio: \(error)")
         }
     }
 
+    // MARK: - Parar
+
     func stopListening() {
+
         audioEngine.stop()
 
         audioEngine.inputNode
             .removeTap(onBus: 0)
 
         recognitionRequest?.endAudio()
+
         recognitionTask?.cancel()
 
         recognitionRequest = nil
@@ -116,7 +145,10 @@ final class SpeechManager: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Tradução
+
     func translate() {
+
         guard !recognizedText.isEmpty else {
             return
         }
@@ -128,7 +160,8 @@ final class SpeechManager: NSObject, ObservableObject {
             return
         }
 
-        var request = URLRequest(url: url)
+        var request =
+            URLRequest(url: url)
 
         request.httpMethod = "POST"
 
@@ -154,7 +187,7 @@ final class SpeechManager: NSObject, ObservableObject {
                   error == nil else {
 
                 print(
-                    "Erro API: " +
+                    "Erro na API: " +
                     (error?.localizedDescription ??
                      "desconhecido")
                 )
@@ -163,6 +196,7 @@ final class SpeechManager: NSObject, ObservableObject {
             }
 
             do {
+
                 let response =
                     try JSONDecoder().decode(
                         TranslationResponse.self,
@@ -170,11 +204,13 @@ final class SpeechManager: NSObject, ObservableObject {
                     )
 
                 DispatchQueue.main.async {
+
                     self?.translatedText =
                         response.translated
                 }
 
             } catch {
+
                 print(
                     "Erro ao interpretar resposta: \(error)"
                 )
@@ -182,21 +218,57 @@ final class SpeechManager: NSObject, ObservableObject {
 
         }.resume()
     }
+
+    // MARK: - Voz em português
+
+    func speakTranslation() {
+
+        guard !translatedText.isEmpty else {
+            return
+        }
+
+        synthesizer.stopSpeaking(
+            at: .immediate
+        )
+
+        let utterance =
+            AVSpeechUtterance(
+                string: translatedText
+            )
+
+        utterance.voice =
+            AVSpeechSynthesisVoice(
+                language: "pt-BR"
+            )
+
+        utterance.rate = 0.5
+
+        synthesizer.speak(utterance)
+    }
 }
 
+// MARK: - Resposta da API
+
 struct TranslationResponse: Codable {
+
     let original: String
     let translated: String
 }
 
+// MARK: - Aplicativo
+
 @main
 struct DublagemIAApp: App {
+
     var body: some Scene {
+
         WindowGroup {
             ContentView()
         }
     }
 }
+
+// MARK: - Interface
 
 struct ContentView: View {
 
@@ -205,67 +277,86 @@ struct ContentView: View {
 
     var body: some View {
 
-        VStack(spacing: 18) {
+        ScrollView {
 
-            Text("Dublagem IA")
-                .font(.largeTitle)
-                .bold()
+            VStack(spacing: 18) {
 
-            Text("Japonês")
-                .font(.headline)
+                Text("Dublagem IA")
+                    .font(.largeTitle)
+                    .bold()
 
-            Text(
-                speechManager.recognizedText.isEmpty
-                ? "Nenhum texto reconhecido"
-                : speechManager.recognizedText
-            )
-            .frame(
-                maxWidth: .infinity,
-                alignment: .leading
-            )
-            .padding()
-            .background(.gray.opacity(0.15))
-            .cornerRadius(12)
+                Text("Japonês")
+                    .font(.headline)
 
-            Text("Português")
-                .font(.headline)
+                Text(
+                    speechManager.recognizedText.isEmpty
+                    ? "Nenhum texto reconhecido"
+                    : speechManager.recognizedText
+                )
+                .frame(
+                    maxWidth: .infinity,
+                    alignment: .leading
+                )
+                .padding()
+                .background(
+                    .gray.opacity(0.15)
+                )
+                .cornerRadius(12)
 
-            Text(
-                speechManager.translatedText.isEmpty
-                ? "A tradução aparecerá aqui"
-                : speechManager.translatedText
-            )
-            .frame(
-                maxWidth: .infinity,
-                alignment: .leading
-            )
-            .padding()
-            .background(.gray.opacity(0.15))
-            .cornerRadius(12)
+                Text("Português")
+                    .font(.headline)
 
-            Button("Autorizar") {
-                speechManager.requestPermissions()
-            }
-            .buttonStyle(.bordered)
+                Text(
+                    speechManager.translatedText.isEmpty
+                    ? "A tradução aparecerá aqui"
+                    : speechManager.translatedText
+                )
+                .frame(
+                    maxWidth: .infinity,
+                    alignment: .leading
+                )
+                .padding()
+                .background(
+                    .gray.opacity(0.15)
+                )
+                .cornerRadius(12)
 
-            Button(
-                speechManager.isListening
-                ? "Parar"
-                : "Ouvir japonês"
-            ) {
-                if speechManager.isListening {
-                    speechManager.stopListening()
-                } else {
-                    speechManager.startListening()
+                Button("Autorizar") {
+
+                    speechManager.requestPermissions()
                 }
-            }
-            .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
 
-            Button("Traduzir") {
-                speechManager.translate()
+                Button(
+                    speechManager.isListening
+                    ? "Parar"
+                    : "Ouvir japonês"
+                ) {
+
+                    if speechManager.isListening {
+
+                        speechManager.stopListening()
+
+                    } else {
+
+                        speechManager.startListening()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Traduzir") {
+
+                    speechManager.translate()
+                }
+                .buttonStyle(.bordered)
+
+                Button("🔊 Ouvir tradução") {
+
+                    speechManager.speakTranslation()
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.bordered)
+            .padding()
         }
-        .padding()
     }
 }
