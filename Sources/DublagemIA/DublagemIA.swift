@@ -6,11 +6,16 @@ final class SpeechManager: NSObject, ObservableObject {
     @Published var isListening = false
     @Published var recognizedText = ""
     @Published var translatedText = ""
-    
+
     private let audioEngine = AVAudioEngine()
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
+    private let speechRecognizer =
+        SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
+
+    private var recognitionRequest:
+        SFSpeechAudioBufferRecognitionRequest?
+
+    private var recognitionTask:
+        SFSpeechRecognitionTask?
 
     func requestPermissions() {
         SFSpeechRecognizer.requestAuthorization { status in
@@ -20,6 +25,11 @@ final class SpeechManager: NSObject, ObservableObject {
                 }
             }
         }
+
+        AVAudioSession.sharedInstance()
+            .requestRecordPermission { granted in
+                print("Microfone: \(granted)")
+            }
     }
 
     func startListening() {
@@ -27,14 +37,21 @@ final class SpeechManager: NSObject, ObservableObject {
 
         recognitionTask?.cancel()
 
-        let request = SFSpeechAudioBufferRecognitionRequest()
+        let request =
+            SFSpeechAudioBufferRecognitionRequest()
+
         request.shouldReportPartialResults = true
         recognitionRequest = request
 
         let session = AVAudioSession.sharedInstance()
 
         do {
-            try session.setCategory(.record, mode: .measurement)
+            try session.setCategory(
+                .record,
+                mode: .measurement,
+                options: [.duckOthers]
+            )
+
             try session.setActive(true)
 
             let inputNode = audioEngine.inputNode
@@ -47,24 +64,28 @@ final class SpeechManager: NSObject, ObservableObject {
                 bufferSize: 1024,
                 format: format
             ) { [weak self] buffer, _ in
-                self?.recognitionRequest?.append(buffer)
+
+                self?.recognitionRequest?
+                    .append(buffer)
             }
 
-            recognitionTask = speechRecognizer?.recognitionTask(
-                with: request
-            ) { [weak self] result, error in
+            recognitionTask =
+                speechRecognizer?.recognitionTask(
+                    with: request
+                ) { [weak self] result, error in
 
-                if let result = result {
-                    DispatchQueue.main.async {
-                        self?.recognizedText =
-                            result.bestTranscription.formattedString
+                    if let result = result {
+                        DispatchQueue.main.async {
+                            self?.recognizedText =
+                                result.bestTranscription
+                                .formattedString
+                        }
+                    }
+
+                    if error != nil {
+                        self?.stopListening()
                     }
                 }
-
-                if error != nil {
-                    self?.stopListening()
-                }
-            }
 
             audioEngine.prepare()
             try audioEngine.start()
@@ -80,7 +101,9 @@ final class SpeechManager: NSObject, ObservableObject {
 
     func stopListening() {
         audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+
+        audioEngine.inputNode
+            .removeTap(onBus: 0)
 
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
@@ -94,16 +117,21 @@ final class SpeechManager: NSObject, ObservableObject {
     }
 
     func translate() {
-        guard !recognizedText.isEmpty else { return }
+        guard !recognizedText.isEmpty else {
+            return
+        }
 
         guard let url = URL(
-            string: "https://dublagem-ia-ios.vercel.app/api/translate"
+            string:
+                "https://dublagem-ia-ios.vercel.app/api/translate"
         ) else {
             return
         }
 
         var request = URLRequest(url: url)
+
         request.httpMethod = "POST"
+
         request.setValue(
             "application/json",
             forHTTPHeaderField: "Content-Type"
@@ -113,29 +141,45 @@ final class SpeechManager: NSObject, ObservableObject {
             "text": recognizedText
         ]
 
-        request.httpBody = try? JSONSerialization.data(
-            withJSONObject: body
-        )
+        request.httpBody =
+            try? JSONSerialization.data(
+                withJSONObject: body
+            )
 
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            guard let data = data, error == nil else {
-                print("Erro na API: \(error?.localizedDescription ?? "desconhecido")")
+        URLSession.shared.dataTask(
+            with: request
+        ) { [weak self] data, _, error in
+
+            guard let data = data,
+                  error == nil else {
+
+                print(
+                    "Erro API: " +
+                    (error?.localizedDescription ??
+                     "desconhecido")
+                )
+
                 return
             }
 
             do {
-                let response = try JSONDecoder().decode(
-                    TranslationResponse.self,
-                    from: data
-                )
+                let response =
+                    try JSONDecoder().decode(
+                        TranslationResponse.self,
+                        from: data
+                    )
 
                 DispatchQueue.main.async {
-                    self.translatedText = response.translated
+                    self?.translatedText =
+                        response.translated
                 }
 
             } catch {
-                print("Erro ao interpretar resposta: \(error)")
+                print(
+                    "Erro ao interpretar resposta: \(error)"
+                )
             }
+
         }.resume()
     }
 }
@@ -155,9 +199,12 @@ struct DublagemIAApp: App {
 }
 
 struct ContentView: View {
-    @StateObject private var speechManager = SpeechManager()
+
+    @StateObject private var speechManager =
+        SpeechManager()
 
     var body: some View {
+
         VStack(spacing: 18) {
 
             Text("Dublagem IA")
@@ -172,7 +219,10 @@ struct ContentView: View {
                 ? "Nenhum texto reconhecido"
                 : speechManager.recognizedText
             )
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(
+                maxWidth: .infinity,
+                alignment: .leading
+            )
             .padding()
             .background(.gray.opacity(0.15))
             .cornerRadius(12)
@@ -185,7 +235,10 @@ struct ContentView: View {
                 ? "A tradução aparecerá aqui"
                 : speechManager.translatedText
             )
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(
+                maxWidth: .infinity,
+                alignment: .leading
+            )
             .padding()
             .background(.gray.opacity(0.15))
             .cornerRadius(12)
