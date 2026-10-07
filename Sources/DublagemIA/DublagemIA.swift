@@ -5,7 +5,8 @@ import Speech
 final class SpeechManager: NSObject, ObservableObject {
     @Published var isListening = false
     @Published var recognizedText = ""
-
+    @Published var translatedText = ""
+    
     private let audioEngine = AVAudioEngine()
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -15,9 +16,7 @@ final class SpeechManager: NSObject, ObservableObject {
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async {
                 if status == .authorized {
-                    print("Reconhecimento de fala autorizado")
-                } else {
-                    print("Reconhecimento de fala não autorizado")
+                    print("Reconhecimento autorizado")
                 }
             }
         }
@@ -27,35 +26,26 @@ final class SpeechManager: NSObject, ObservableObject {
         guard !isListening else { return }
 
         recognitionTask?.cancel()
-        recognitionTask = nil
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         recognitionRequest = request
 
-        let audioSession = AVAudioSession.sharedInstance()
+        let session = AVAudioSession.sharedInstance()
 
         do {
-            try audioSession.setCategory(
-                .record,
-                mode: .measurement,
-                options: [.duckOthers]
-            )
-
-            try audioSession.setActive(
-                true,
-                options: .notifyOthersOnDeactivation
-            )
+            try session.setCategory(.record, mode: .measurement)
+            try session.setActive(true)
 
             let inputNode = audioEngine.inputNode
-            let recordingFormat = inputNode.outputFormat(forBus: 0)
+            let format = inputNode.outputFormat(forBus: 0)
 
             inputNode.removeTap(onBus: 0)
 
             inputNode.installTap(
                 onBus: 0,
                 bufferSize: 1024,
-                format: recordingFormat
+                format: format
             ) { [weak self] buffer, _ in
                 self?.recognitionRequest?.append(buffer)
             }
@@ -66,7 +56,8 @@ final class SpeechManager: NSObject, ObservableObject {
 
                 if let result = result {
                     DispatchQueue.main.async {
-                        self?.recognizedText = result.bestTranscription.formattedString
+                        self?.recognizedText =
+                            result.bestTranscription.formattedString
                     }
                 }
 
@@ -83,7 +74,7 @@ final class SpeechManager: NSObject, ObservableObject {
             }
 
         } catch {
-            print("Erro ao iniciar reconhecimento: \(error)")
+            print("Erro: \(error)")
         }
     }
 
@@ -97,15 +88,61 @@ final class SpeechManager: NSObject, ObservableObject {
         recognitionRequest = nil
         recognitionTask = nil
 
-        try? AVAudioSession.sharedInstance().setActive(
-            false,
-            options: .notifyOthersOnDeactivation
-        )
-
         DispatchQueue.main.async {
             self.isListening = false
         }
     }
+
+    func translate() {
+        guard !recognizedText.isEmpty else { return }
+
+        guard let url = URL(
+            string: "https://dublagem-ia-ios.vercel.app/api/translate"
+        ) else {
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(
+            "application/json",
+            forHTTPHeaderField: "Content-Type"
+        )
+
+        let body = [
+            "text": recognizedText
+        ]
+
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: body
+        )
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data = data, error == nil else {
+                print("Erro na API: \(error?.localizedDescription ?? "desconhecido")")
+                return
+            }
+
+            do {
+                let response = try JSONDecoder().decode(
+                    TranslationResponse.self,
+                    from: data
+                )
+
+                DispatchQueue.main.async {
+                    self.translatedText = response.translated
+                }
+
+            } catch {
+                print("Erro ao interpretar resposta: \(error)")
+            }
+        }.resume()
+    }
+}
+
+struct TranslationResponse: Codable {
+    let original: String
+    let translated: String
 }
 
 @main
@@ -121,31 +158,39 @@ struct ContentView: View {
     @StateObject private var speechManager = SpeechManager()
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 18) {
 
             Text("Dublagem IA")
                 .font(.largeTitle)
                 .bold()
 
+            Text("Japonês")
+                .font(.headline)
+
             Text(
-                speechManager.isListening
-                ? "Ouvindo japonês..."
-                : "Pronto para testar"
+                speechManager.recognizedText.isEmpty
+                ? "Nenhum texto reconhecido"
+                : speechManager.recognizedText
             )
-            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(.gray.opacity(0.15))
+            .cornerRadius(12)
 
-            ScrollView {
-                Text(
-                    speechManager.recognizedText.isEmpty
-                    ? "O texto reconhecido aparecerá aqui."
-                    : speechManager.recognizedText
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-            }
-            .frame(maxHeight: 250)
+            Text("Português")
+                .font(.headline)
 
-            Button("Autorizar reconhecimento") {
+            Text(
+                speechManager.translatedText.isEmpty
+                ? "A tradução aparecerá aqui"
+                : speechManager.translatedText
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(.gray.opacity(0.15))
+            .cornerRadius(12)
+
+            Button("Autorizar") {
                 speechManager.requestPermissions()
             }
             .buttonStyle(.bordered)
@@ -153,7 +198,7 @@ struct ContentView: View {
             Button(
                 speechManager.isListening
                 ? "Parar"
-                : "Começar reconhecimento"
+                : "Ouvir japonês"
             ) {
                 if speechManager.isListening {
                     speechManager.stopListening()
@@ -162,6 +207,11 @@ struct ContentView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
+
+            Button("Traduzir") {
+                speechManager.translate()
+            }
+            .buttonStyle(.bordered)
         }
         .padding()
     }
